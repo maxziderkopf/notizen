@@ -1,0 +1,16 @@
+# Konfiguration für die Notizen-App mit Erinnerungen
+
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+
+# Prüft jede Minute, ob eine Erinnerung fällig ist
+[functions."check"]
+  schedule = "* * * * *"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
