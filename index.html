@@ -76,6 +76,25 @@ button{font:inherit;background:none;border:0;color:inherit;cursor:pointer}
   font-size:15px;color:var(--text)}
 .cell.out{opacity:.22}
 .cell.today{border-color:var(--blue);color:var(--blue);font-weight:700}
+.cell.hol{color:#FFB35C}
+.cell.fer{background:rgba(103,232,240,.10)}
+.cell.hol.fer{background:rgba(255,179,92,.12)}
+.mini td.holT{color:#FFB35C;font-weight:700}
+.mini td.ferT{background:rgba(103,232,240,.13);border-radius:3px}
+.legend{margin:14px 2px 0;color:var(--dim);font-size:12px;line-height:1.7}
+.legend p{margin:0}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+.dotHol{background:#FFB35C}
+.dotFer{background:var(--mint)}
+.tagBadges{margin:-6px 2px 12px}
+.tagBadges b{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:4px 10px;margin-right:6px}
+.tagHol{background:rgba(255,179,92,.16);color:#FFB35C}
+.tagFer{background:rgba(103,232,240,.14);color:var(--mint)}
+.dh.hol b{color:#FFB35C}
+.dh.fer{background:rgba(103,232,240,.10)}
+.dh .hb{display:block;font-size:8px;color:#FFB35C;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dayCol.fer{background:rgba(103,232,240,.05)}
+.dayCol.hol{background:rgba(255,179,92,.05)}
 .cell .dots{display:flex;gap:3px;height:5px}
 .cell .dots i{width:5px;height:5px;border-radius:50%;background:var(--mint)}
 .viewSwitch{display:flex;gap:7px;margin:0 0 14px}
@@ -306,6 +325,7 @@ body.dragging .item.picked{opacity:1;border-radius:12px;background:var(--panel2)
 .opt button.on{border-color:var(--blue);color:var(--blue);background:rgba(62,123,250,.1)}
 .wide{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:11px;
   padding:12px 14px;font-size:14px;margin-bottom:9px}
+select.wide{background:var(--panel2);color:var(--text);font:inherit;font-size:14px}
 .wide.danger{color:var(--red);border-color:rgba(229,100,106,.35)}
 .stat{color:var(--dimmer);font-size:12px;line-height:1.6}
 
@@ -489,6 +509,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
     <h4>Papierkorb</h4>
     <div id="trashBox"></div>
 
+    <h4>Feiertage &amp; Ferien</h4>
+    <select class="wide" id="optLand"></select>
+    <select class="wide" id="optRegion"></select>
+    <p class="stat" id="ferStat"></p>
+    <button class="wide" id="ferLoad">Ferien neu laden</button>
+
     <h4>Benachrichtigungen</h4>
     <p class="stat" id="pushStat">wird geprüft …</p>
     <button class="wide" id="pushOn">Erinnerungen erlauben</button>
@@ -564,7 +590,7 @@ const KEY='notizen:v3', OLD='notizen:v2';
 const $=s=>document.querySelector(s);
 let notes=[], events=[], folders=[], trash=[], curFolder=null, openId=null, showDone=false, editing=null;
 let undoStack=[];
-let cfg={sort:'updated',size:17,done:'hide'};
+let cfg={sort:'updated',size:17,done:'hide',land:'DE',region:''};
 const urls={};
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
@@ -791,7 +817,7 @@ function renderNote(){
     <button data-add="plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5M9 2h6"/></svg>Zeitplan</button>
     <button data-add="text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6h14M9 6v13M4 12h7"/></svg>Text</button>
   </div>`;
-  html+=`<p class="tipline">Enter macht einen Zeilenumbruch. Reihenfolge änderst du über den Greifpunkt rechts.</p>`;
+  html+=`<p class="tipline">Enter legt den nächsten Eintrag an · Shift+Enter macht einen Umbruch · Reihenfolge über den Greifpunkt</p>`;
   if(n.blocks.some(b=>b.type==='plan'))
     html+=`<div class="chipRow">
       <button class="chip" id="addPlan">+ Zeitpunkt</button>
@@ -1043,6 +1069,13 @@ $('#lines').addEventListener('input',e=>{
 $('#lines').addEventListener('keydown',e=>{
   const id=e.target.dataset.txt; if(!id) return;
   const n=note();
+  // Enter legt den nächsten Eintrag an; für einen Umbruch im selben Eintrag Shift+Enter
+  if(e.key==='Enter'&&!e.shiftKey){
+    e.preventDefault();
+    const b=blockById(id);
+    newLine(id, b.type==='plan'?false:(b.check===null?null:false));
+    return;
+  }
   if(e.key==='Backspace'&&e.target.value===''&&n.blocks.length>1){
     e.preventDefault(); snap();
     const i=n.blocks.findIndex(x=>x.id===id);
@@ -1187,6 +1220,22 @@ $('#recCancel').onclick=()=>{ chunks=[]; goBack(); };
 /* =========================================================
    Einstellungen
 ========================================================= */
+function fillLandOpts(){
+  const l=$('#optLand'), r=$('#optRegion');
+  if(!l||!r) return;
+  l.innerHTML=LAENDER.map(([k,n])=>`<option value="${k}" ${cfg.land===k?'selected':''}>${n}</option>`).join('');
+  const list=REGIONEN[cfg.land||'DE']||[];
+  r.innerHTML='<option value="">Bundesland wählen …</option>'+
+    list.map(([k,n])=>`<option value="${k}" ${cfg.region===k?'selected':''}>${n}</option>`).join('');
+  ferStat();
+}
+function ferStat(){
+  const el=$('#ferStat'); if(!el) return;
+  if(!cfg.region){ el.textContent='Ohne Bundesland werden nur bundesweite Feiertage angezeigt.'; return; }
+  const y=new Date().getFullYear(), n=(ferienOf(y)||[]).length;
+  el.textContent=n?`Ferien ${y}: ${n} Zeiträume gespeichert. Feiertage werden im Gerät berechnet.`
+                  :`Ferien ${y} noch nicht geladen – dafür wird einmalig Internet gebraucht.`;
+}
 function markOpts(){
   $('#optSort').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.sort===cfg.sort));
   $('#optSize').querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.size===cfg.size));
@@ -1226,7 +1275,9 @@ function pushStat(){
   const el=$('#pushStat'); if(!el) return;
   const n=reminderItems().length;
   if(!('Notification' in window)) { el.textContent='Dieses Gerät unterstützt keine Benachrichtigungen.'; return; }
-  if(Notification.permission==='granted') el.innerHTML='Erlaubt · '+n+(n===1?' Erinnerung':' Erinnerungen')+' angemeldet<br>Kommt auch bei geschlossener App an.';
+  if(Notification.permission==='granted') el.innerHTML='Erlaubt · '+n+(n===1?' Erinnerung':' Erinnerungen')+' geplant<br>'+
+    (serverPush?'Kommt auch bei geschlossener App an.'
+              :'Kommt zuverlässig, solange die App zwischendurch geöffnet wird. Für Termine weit in der Zukunft zusätzlich „In Handykalender" nutzen.');
   else if(Notification.permission==='denied') el.textContent='Vom Handy blockiert. In den Android-Einstellungen unter Apps → Notizen → Benachrichtigungen wieder erlauben.';
   else el.textContent='Noch nicht erlaubt. Termine mit Erinnerung fragen beim Speichern nach.';
 }
@@ -1237,8 +1288,17 @@ $('#pushTest').onclick=async()=>{
   reg.showNotification('Notizen',{body:'So sieht eine Erinnerung aus.',icon:'./icon.png',badge:'./icon.png',vibrate:[80,40,80]});
   toast('Testbenachrichtigung gesendet');
 };
-$('#menu').onclick=()=>{ markOpts(); stats(); pushStat(); renderTrash(); $('#drawer').classList.add('on'); pushLayer('drawer'); };
+$('#menu').onclick=()=>{ markOpts(); fillLandOpts(); stats(); pushStat(); renderTrash(); $('#drawer').classList.add('on'); pushLayer('drawer'); };
 $('#drawer').addEventListener('click',e=>{ if(e.target.dataset.close!==undefined) goBack(); });
+$('#optLand').onchange=e=>{ cfg.land=e.target.value; cfg.region=''; holCache={}; saveNow(); fillLandOpts(); if(note&&$('#scrCal').classList.contains('on')) renderCal(); };
+$('#optRegion').onchange=e=>{
+  cfg.region=e.target.value; holCache={}; saveNow(); ferStat();
+  if(cfg.region) ladeFerien(new Date().getFullYear(),true);
+  if($('#scrCal').classList.contains('on')) renderCal();
+};
+$('#ferLoad').onclick=()=>{ const y=calY||new Date().getFullYear();
+  ferienCache={}; try{localStorage.removeItem(ferienKey(y));}catch(e){}
+  ladeFerien(y,true); };
 $('#optSort').addEventListener('click',e=>{const b=e.target.closest('[data-sort]');if(!b)return;
   cfg.sort=b.dataset.sort;markOpts();saveNow();renderList();});
 $('#optSize').addEventListener('click',e=>{const b=e.target.closest('[data-size]');if(!b)return;
@@ -1310,6 +1370,125 @@ let calMode='year', calY=new Date().getFullYear(), calM=new Date().getMonth(), c
 function evOf(iso){ return events.filter(e=>e.date===iso).sort((a,b)=>(a.allday?'':a.start||'').localeCompare(b.allday?'':b.start||'')); }
 function hasEv(iso){ return events.some(e=>e.date===iso); }
 
+
+/* =========================================================
+   Feiertage und Ferien
+   Feiertage werden im Gerät berechnet (funktioniert offline).
+   Ferientermine kommen von openholidaysapi.org und werden
+   pro Jahr und Bundesland gespeichert.
+========================================================= */
+const LAENDER=[['DE','Deutschland'],['AT','Österreich'],['CH','Schweiz']];
+const REGIONEN={
+  DE:[['DE-BW','Baden-Württemberg'],['DE-BY','Bayern'],['DE-BE','Berlin'],['DE-BB','Brandenburg'],
+      ['DE-HB','Bremen'],['DE-HH','Hamburg'],['DE-HE','Hessen'],['DE-MV','Mecklenburg-Vorpommern'],
+      ['DE-NI','Niedersachsen'],['DE-NW','Nordrhein-Westfalen'],['DE-RP','Rheinland-Pfalz'],
+      ['DE-SL','Saarland'],['DE-SN','Sachsen'],['DE-ST','Sachsen-Anhalt'],
+      ['DE-SH','Schleswig-Holstein'],['DE-TH','Thüringen']],
+  AT:[['AT-1','Burgenland'],['AT-2','Kärnten'],['AT-3','Niederösterreich'],['AT-4','Oberösterreich'],
+      ['AT-5','Salzburg'],['AT-6','Steiermark'],['AT-7','Tirol'],['AT-8','Vorarlberg'],['AT-9','Wien']],
+  CH:[['CH-ZH','Zürich'],['CH-BE','Bern'],['CH-LU','Luzern'],['CH-BS','Basel-Stadt'],
+      ['CH-SG','St. Gallen'],['CH-AG','Aargau'],['CH-TI','Tessin'],['CH-VD','Waadt']]
+};
+function ostern(y){                       // Osterformel nach Gauß/Meeus
+  const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,
+        f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,
+        i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),
+        mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;
+  return new Date(y,mo-1,da);
+}
+const shift=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return isoOf(x.getFullYear(),x.getMonth(),x.getDate());};
+let holCache={};
+function feiertage(y){
+  const land=cfg.land||'DE', reg=cfg.region||'';
+  const key=land+'|'+reg+'|'+y;
+  if(holCache[key]) return holCache[key];
+  const o=ostern(y), map={};
+  const add=(iso,name)=>{ map[iso]=name; };
+  const inReg=(...codes)=>codes.includes(reg);
+
+  if(land==='DE'){
+    add(isoOf(y,0,1),'Neujahr');
+    add(shift(o,-2),'Karfreitag');
+    add(shift(o,1),'Ostermontag');
+    add(isoOf(y,4,1),'Tag der Arbeit');
+    add(shift(o,39),'Christi Himmelfahrt');
+    add(shift(o,50),'Pfingstmontag');
+    add(isoOf(y,9,3),'Tag der Deutschen Einheit');
+    add(isoOf(y,11,25),'1. Weihnachtstag');
+    add(isoOf(y,11,26),'2. Weihnachtstag');
+    if(inReg('DE-BW','DE-BY','DE-ST')) add(isoOf(y,0,6),'Heilige Drei Könige');
+    if(inReg('DE-BE','DE-MV')) add(isoOf(y,2,8),'Internationaler Frauentag');
+    if(inReg('DE-BB')){ add(shift(o,0),'Ostersonntag'); add(shift(o,49),'Pfingstsonntag'); }
+    if(inReg('DE-BW','DE-BY','DE-HE','DE-NW','DE-RP','DE-SL')) add(shift(o,60),'Fronleichnam');
+    if(inReg('DE-SL')) add(isoOf(y,7,15),'Mariä Himmelfahrt');
+    if(inReg('DE-TH')) add(isoOf(y,8,20),'Weltkindertag');
+    if(inReg('DE-BB','DE-HB','DE-HH','DE-MV','DE-NI','DE-SN','DE-ST','DE-SH','DE-TH')) add(isoOf(y,9,31),'Reformationstag');
+    if(inReg('DE-BW','DE-BY','DE-NW','DE-RP','DE-SL')) add(isoOf(y,10,1),'Allerheiligen');
+    if(inReg('DE-SN')){                    // Buß- und Bettag: Mittwoch vor dem 23.11.
+      const d=new Date(y,10,23); d.setDate(23-((d.getDay()+4)%7||7));
+      add(isoOf(d.getFullYear(),d.getMonth(),d.getDate()),'Buß- und Bettag');
+    }
+  } else if(land==='AT'){
+    add(isoOf(y,0,1),'Neujahr'); add(isoOf(y,0,6),'Heilige Drei Könige');
+    add(shift(o,1),'Ostermontag'); add(isoOf(y,4,1),'Staatsfeiertag');
+    add(shift(o,39),'Christi Himmelfahrt'); add(shift(o,50),'Pfingstmontag');
+    add(shift(o,60),'Fronleichnam'); add(isoOf(y,7,15),'Mariä Himmelfahrt');
+    add(isoOf(y,9,26),'Nationalfeiertag'); add(isoOf(y,10,1),'Allerheiligen');
+    add(isoOf(y,11,8),'Mariä Empfängnis'); add(isoOf(y,11,25),'Christtag');
+    add(isoOf(y,11,26),'Stefanitag');
+  } else {
+    add(isoOf(y,0,1),'Neujahr'); add(shift(o,-2),'Karfreitag');
+    add(shift(o,1),'Ostermontag'); add(shift(o,39),'Auffahrt');
+    add(shift(o,50),'Pfingstmontag'); add(isoOf(y,7,1),'Nationalfeiertag');
+    add(isoOf(y,11,25),'Weihnachten'); add(isoOf(y,11,26),'Stephanstag');
+  }
+  holCache[key]=map; return map;
+}
+function feiertagAn(iso){ return feiertage(+iso.slice(0,4))[iso]||''; }
+
+/* ---- Ferien ---- */
+let ferienCache={}, ferienLaden={};
+const ferienKey=(y)=>'ferien:'+(cfg.region||cfg.land||'DE')+':'+y;
+function ferienOf(y){
+  if(!cfg.region) return [];
+  const k=ferienKey(y);
+  if(ferienCache[k]) return ferienCache[k];
+  try{ const raw=localStorage.getItem(k); if(raw){ ferienCache[k]=JSON.parse(raw); return ferienCache[k]; } }catch(e){}
+  ladeFerien(y);
+  return [];
+}
+async function ladeFerien(y,laut){
+  if(!cfg.region) { if(laut) toast('Erst Bundesland wählen'); return; }
+  const k=ferienKey(y);
+  if(ferienLaden[k]) return; ferienLaden[k]=true;
+  const url='https://openholidaysapi.org/SchoolHolidays?countryIsoCode='+(cfg.land||'DE')+
+    '&subdivisionCode='+cfg.region+'&languageIsoCode=DE'+
+    '&validFrom='+y+'-01-01&validTo='+y+'-12-31';
+  try{
+    const r=await fetch(url);
+    if(!r.ok) throw 0;
+    const data=await r.json();
+    const list=data.map(x=>({a:x.startDate,b:x.endDate,
+      n:(x.name&&x.name[0]&&x.name[0].text)||'Ferien'}));
+    ferienCache[k]=list;
+    try{ localStorage.setItem(k,JSON.stringify(list)); }catch(e){}
+    if(laut) toast(list.length+' Ferienzeiträume geladen');
+    if($('#scrCal').classList.contains('on')) renderCal();
+    pushStat&&pushStat();
+  }catch(e){
+    if(laut) toast('Ferien konnten nicht geladen werden');
+  }finally{ ferienLaden[k]=false; }
+}
+function ferienAn(iso){
+  const f=ferienOf(+iso.slice(0,4));
+  const hit=f.find(x=>iso>=x.a&&iso<=x.b);
+  return hit?hit.n:'';
+}
+function tagInfo(iso){
+  const fe=feiertagAn(iso), fer=ferienAn(iso);
+  return {fe,fer,cls:(fe?' hol':'')+(fer?' fer':'')};
+}
+
 function miniMonth(y,m){
   const first=firstWd(y,m), n=daysIn(y,m), t=todayIso();
   let cells='', day=1;
@@ -1319,7 +1498,8 @@ function miniMonth(y,m){
       const idx=r*7+c;
       if(idx<first||day>n){ row+='<td></td>'; continue; }
       const iso=isoOf(y,m,day);
-      row+=`<td class="${iso===t?'today':(hasEv(iso)?'has':'')}">${day}</td>`;
+      const inf=tagInfo(iso);
+      row+=`<td class="${iso===t?'today':(inf.fe?'holT':(hasEv(iso)?'has':''))}${inf.fer?' ferT':''}">${day}</td>`;
       day++;
     }
     cells+='<tr>'+row+'</tr>';
@@ -1353,9 +1533,10 @@ function renderMonth(){
     const dnum=i-first+1;
     if(dnum<1){ cells+=`<div class="cell out">${prev+dnum}</div>`; continue; }
     if(dnum>n){ cells+=`<div class="cell out">${dnum-n}</div>`; continue; }
-    const iso=isoOf(calY,calM,dnum), evs=evOf(iso);
+    const iso=isoOf(calY,calM,dnum), evs=evOf(iso), inf=tagInfo(iso);
     const dots=evs.slice(0,3).map(()=>'<i></i>').join('');
-    cells+=`<button class="cell${iso===t?' today':''}" data-day="${iso}">${dnum}<span class="dots">${dots}</span></button>`;
+    cells+=`<button class="cell${iso===t?' today':''}${inf.cls}" data-day="${iso}"
+      title="${esc([inf.fe,inf.fer].filter(Boolean).join(' · '))}">${dnum}<span class="dots">${dots}</span></button>`;
   }
   const cnt=events.filter(e=>e.date.startsWith(`${calY}-${p2(calM+1)}`)).length;
   $('#calBody').innerHTML=`
@@ -1366,12 +1547,31 @@ function renderMonth(){
     </div>
     ${switcher()}
     <div class="wdrow">${WDL.map(w=>`<span>${w}</span>`).join('')}</div>
-    <div class="monthGrid">${cells}</div>`;
+    <div class="monthGrid">${cells}</div>
+    ${monatsLegende()}`;
+}
+function monatsLegende(){
+  const y=calY, m=calM;
+  const fe=[], fer=new Set();
+  for(let d=1;d<=daysIn(y,m);d++){
+    const iso=isoOf(y,m,d), i=tagInfo(iso);
+    if(i.fe) fe.push(p2(d)+'. '+i.fe);
+    if(i.fer) fer.add(i.fer);
+  }
+  if(!fe.length&&!fer.size)
+    return cfg.region?'':'<p class="wlegend">Für Feiertage und Ferien im Menü das Bundesland wählen.</p>';
+  return '<div class="legend">'+
+    (fe.length?'<p><i class="dotHol"></i>'+fe.map(esc).join(' · ')+'</p>':'')+
+    (fer.size?'<p><i class="dotFer"></i>Ferien: '+[...fer].map(esc).join(' · ')+'</p>':'')+
+  '</div>';
 }
 function renderDay(){
   $('#calBackTxt').textContent=MON[calM].slice(0,3)+' '+calY;
   const evs=evOf(calD);
-  let html=`<div class="calTop"><h2>${prettyDate(calD)}<small>${evs.length?evs.length+(evs.length===1?' Termin':' Termine'):'Nichts eingetragen'}</small></h2></div>`+switcher();
+  const inf=tagInfo(calD);
+  const extra=[inf.fe?'<b class="tagHol">'+esc(inf.fe)+'</b>':'',inf.fer?'<b class="tagFer">'+esc(inf.fer)+'</b>':''].filter(Boolean).join(' ');
+  let html=`<div class="calTop"><h2>${prettyDate(calD)}<small>${evs.length?evs.length+(evs.length===1?' Termin':' Termine'):'Nichts eingetragen'}</small></h2></div>`
+    +(extra?`<p class="tagBadges">${extra}</p>`:'')+switcher();
   if(evForm) html+=formHtml();
   html+=evs.map(e=>`<button class="ev" data-ev="${e.id}">
       <span class="when">${e.allday?'ganztags':(e.start||'')+(e.end?'<br>'+e.end:'')}</span>
@@ -1455,8 +1655,10 @@ function renderWeek(){
   // Kopfzeile mit den sieben Tagen
   const head='<div class="wkHead"><div class="gut">KW '+kw(start)+'</div>'+
     days.map(iso=>{const [,mm,dd]=iso.split('-').map(Number);
-      return `<button class="dh${iso===t?' today':''}" data-day="${iso}">
-        ${dayName(iso)}<b>${dd}</b>${dd===1||iso===start?`<span style="font-size:9px">${MONK[mm-1]}</span>`:''}</button>`;
+      const inf=tagInfo(iso);
+      return `<button class="dh${iso===t?' today':''}${inf.cls}" data-day="${iso}"
+        title="${esc([inf.fe,inf.fer].filter(Boolean).join(' · '))}">
+        ${dayName(iso)}<b>${dd}</b>${inf.fe?'<span class="hb">'+esc(inf.fe.slice(0,9))+'</span>':(dd===1||iso===start?`<span style="font-size:9px">${MONK[mm-1]}</span>`:'')}</button>`;
     }).join('')+'</div>';
 
   // Ganztägige Termine in eigener Zeile
@@ -1488,7 +1690,7 @@ function renderWeek(){
       const d=new Date(), m=d.getHours()*60+d.getMinutes();
       if(m>=h0*60&&m<=h1*60) now=`<i class="nowLine" style="top:${(m-h0*60)/60*PPH}px"></i>`;
     }
-    return `<div class="dayCol${iso===t?' today':''}" data-track="${iso}"
+    return `<div class="dayCol${iso===t?' today':''}${tagInfo(iso).cls}" data-track="${iso}"
       style="height:${H}px;background-image:${grid}">${blocks}${now}</div>`;
   }).join('');
 
@@ -1521,6 +1723,7 @@ function renderCal(){
 }
 function openCal(){
   calMode='year'; evForm=null;
+  if(cfg.region) ferienOf(new Date().getFullYear());
   const n=new Date(); calY=n.getFullYear(); calM=n.getMonth();
   show('scrCal'); renderCal(); pushLayer('cal');
 }
@@ -1541,7 +1744,7 @@ $('#calBody').addEventListener('click',e=>{
   const tr=e.target.closest('[data-track]');
   if(tr&&!e.target.closest('.slot')){ calD=tr.dataset.track; calMode='day'; evForm=null; renderDay(); pushLayer('cal'); return; }
   const y=e.target.closest('[data-year]');
-  if(y){ calY+=+y.dataset.year; renderYear(); return; }
+  if(y){ calY+=+y.dataset.year; if(cfg.region) ferienOf(calY); renderYear(); return; }
   const mo=e.target.closest('[data-mon]');
   if(mo){ calM+=+mo.dataset.mon;
     if(calM<0){calM=11;calY--;} if(calM>11){calM=0;calY++;}
@@ -1640,9 +1843,42 @@ async function syncReminders(ask){
     const r=await fetch(PUSH_URL,{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({device:deviceId(),sub,items})});
     if(!r.ok) throw 0;
-    return true;
-  }catch(e){ toast('Erinnerung konnte nicht angemeldet werden'); return false; }
+    serverPush=true; return true;
+  }catch(e){ serverPush=false; return false; }   // ohne Server läuft die lokale Erinnerung
 }
+
+/* Lokale Erinnerung: funktioniert ohne Server, solange die App
+   geöffnet ist oder von Android im Hintergrund gehalten wird. */
+let serverPush=false;
+function firedSet(){
+  try{ return new Set(JSON.parse(localStorage.getItem('notizen:fired')||'[]')); }catch(e){ return new Set(); }
+}
+function markFired(id){
+  const s=firedSet(); s.add(id);
+  const arr=[...s].slice(-200);
+  try{ localStorage.setItem('notizen:fired',JSON.stringify(arr)); }catch(e){}
+}
+async function checkLocalReminders(){
+  if(!('Notification' in window)||Notification.permission!=='granted') return;
+  const now=Date.now(), fired=firedSet();
+  for(const e of events){
+    if(e.remind===null||e.remind===undefined) continue;
+    const at=remindAt(e), key=e.id+'@'+at;
+    if(fired.has(key)) continue;
+    if(at<=now&&at>now-10*60000){
+      try{
+        const reg=await navigator.serviceWorker.ready;
+        reg.showNotification(e.title||'Termin',{
+          body:(e.allday?'Heute':(e.start||'')+(e.end?' – '+e.end:''))+(e.note?' · '+e.note:''),
+          icon:'./icon.png',badge:'./icon.png',tag:e.id,renotify:true,vibrate:[90,40,90]
+        });
+      }catch(err){}
+      markFired(key);
+    }
+  }
+}
+setInterval(checkLocalReminders,30000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkLocalReminders(); });
 
 function exportIcs(e){
   const stamp=s=>s.replace(/-/g,''), tm=t=>(t||'09:00').replace(':','')+'00';
